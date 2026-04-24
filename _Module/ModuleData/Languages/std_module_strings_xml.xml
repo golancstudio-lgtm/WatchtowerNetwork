@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<base xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" type="string">
+  <tags>
+    <tag language="English" />
+  </tags>
+  <strings>
+    <string id="jPjZI2lwC" text="Manage watchtower" />
+    <string id="HTMIhIUxk" text="View latest reports" />
+    <string id="39qZOSFG3" text="Bribe guards to view latest reports ({BRIBE_AMOUNT}{GOLD_ICON})" />
+    <string id="dSDr0Jcca" text="You have arrived to {SETTLEMENT_LINK}. You see the guards keep an eye for any danger around your town {BOUND_SETTLEMENT}" />
+    <string id="esSOLExSz" text="You have arrived to {SETTLEMENT_LINK}. You see the guards keep an eye for any danger around the town {BOUND_SETTLEMENT} which governed by {LORD.LINK}, {FACTION_OFFICIAL} of the {FACTION_TERM}" />
+    <string id="47oAY0ZkR" text="The guards say that they can't just let anyone read these reports." />
+    <string id="txhhmm4Qt" text="Under development..." />
+    <string id="UALqZd4p9" text="You cannot view reports of an enemy watchtower." />
+    <string id="PrgfCIcXI" text="You cannot wait in an enemy watchtower." />
+    <string id="E2VTAO3Zv" text="Watchtower" />
+    <string id="1OUB7rluv" text="•  {TIME} - {NAME} is leading {TYPE} of {TROOPS} troops. They are {BEHAVIOR} Prisoner count: {PRISONERS}." />
+    <string id="E3VRLZuad" text="an army" />
+    <string id="BTWfLQlD8" text="a party" />
+    <string id="9PsOPlCnL" text="doing an " />
+    <string id="0VnYu0si0" text="Watchtower Reports" />
+    <string id="hIKjqGFeR" text="No reports are currently available." />
+  </strings>
+</base>

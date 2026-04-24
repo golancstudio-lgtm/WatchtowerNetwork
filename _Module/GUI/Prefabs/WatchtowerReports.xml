@@ -1,0 +1,75 @@
+<Prefab>
+  <Constants>
+    <Constant Name="WatchtowerReports.Frame.Width" BrushName="Encyclopedia.Frame" BrushLayer="Default" BrushValueType="Width" />
+    <Constant Name="WatchtowerReports.Frame.Height" BrushName="Encyclopedia.Frame" BrushLayer="Default" BrushValueType="Height" />
+    <Constant Name="Popup.CloseButton.Width" BrushName="Popup.CloseButton" BrushLayer="Default" BrushValueType="Width" />
+    <Constant Name="Popup.CloseButton.Height" BrushName="Popup.CloseButton" BrushLayer="Default" BrushValueType="Height" />
+  </Constants>
+
+  <Window>
+    <BrushWidget WidthSizePolicy="StretchToParent" HeightSizePolicy="StretchToParent">
+      <Children>
+
+        <BrushWidget WidthSizePolicy="Fixed" HeightSizePolicy="Fixed" SuggestedWidth="!WatchtowerReports.Frame.Width" SuggestedHeight="!WatchtowerReports.Frame.Height" HorizontalAlignment="Center" VerticalAlignment="Center" Brush="Encyclopedia.Frame">
+          <Children>
+
+            <Widget WidthSizePolicy="StretchToParent" HeightSizePolicy="Fixed" SuggestedHeight="130">
+              <Children>
+
+                <Widget WidthSizePolicy="Fixed" HeightSizePolicy="Fixed" SuggestedHeight="150" SuggestedWidth="576" PositionYOffset="-17" HorizontalAlignment="Center" Sprite="StdAssets\tabbar_popup" DoNotAcceptEvents="true">
+                  <Children>
+                    <RichTextWidget WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren" VerticalAlignment="Center" PositionYOffset="-22" Brush="Recruitment.Popup.Title.Text" Text="@Title" Brush.FontSize="38" />
+                  </Children>
+                </Widget>
+
+                <ButtonWidget Command.Click="ExecuteClose" WidthSizePolicy="Fixed" HeightSizePolicy="Fixed" SuggestedWidth="!Popup.CloseButton.Width" SuggestedHeight="!Popup.CloseButton.Height" HorizontalAlignment="Right" VerticalAlignment="Top" MarginRight="-25" MarginTop="-25" Brush="Popup.CloseButton" />
+
+              </Children>
+            </Widget>
+
+            <Widget WidthSizePolicy="StretchToParent" HeightSizePolicy="StretchToParent" MarginLeft="70" MarginRight="70" MarginTop="135" MarginBottom="55">
+              <Children>
+
+                <ScrollablePanel WidthSizePolicy="StretchToParent" HeightSizePolicy="StretchToParent" AutoHideScrollBars="true" ClipRect="ReportsClipRect" InnerPanel="ReportsClipRect\ReportsList" VerticalScrollbar="ReportsScrollbar" IsVisible="@HasReports" MarginTop="70">
+                  <Children>
+
+                    <Widget Id="ReportsClipRect" WidthSizePolicy="StretchToParent" HeightSizePolicy="StretchToParent" ClipContents="true" MarginRight="20">
+                      <Children>
+                        <NavigatableListPanel Id="ReportsList" DataSource="{Reports}" WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren" StackLayout.LayoutMethod="VerticalTopToBottom">
+                          <ItemTemplate>
+                            <Widget WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren" MarginBottom="12">
+                              <Children>
+                                <RichTextWidget WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren" Brush="EncyclopediaNavBar.Text" Brush.FontSize="24" Brush.TextHorizontalAlignment="Left" Text="@Text" Command.LinkClick="ExecuteLink" Command.LinkAlternateClick="ExecuteLink" />
+                              </Children>
+                            </Widget>
+                          </ItemTemplate>
+                        </NavigatableListPanel>
+                      </Children>
+                    </Widget>
+
+                    <ScrollbarWidget Id="ReportsScrollbar" WidthSizePolicy="Fixed" HeightSizePolicy="StretchToParent" SuggestedWidth="10" HorizontalAlignment="Right" AlignmentAxis="Vertical" Handle="ReportsScrollbarHandle" MaxValue="100" MinValue="0">
+                      <Children>
+                        <Widget WidthSizePolicy="Fixed" HeightSizePolicy="StretchToParent" SuggestedWidth="5" HorizontalAlignment="Center" Sprite="BlankWhiteSquare_9" Color="#5a4033AA" />
+                        <ImageWidget Id="ReportsScrollbarHandle" WidthSizePolicy="Fixed" HeightSizePolicy="Fixed" SuggestedWidth="10" SuggestedHeight="20" HorizontalAlignment="Center" Brush="FaceGen.Scrollbar.Handle" />
+                      </Children>
+                    </ScrollbarWidget>
+
+                  </Children>
+                </ScrollablePanel>
+
+                <Widget WidthSizePolicy="StretchToParent" HeightSizePolicy="StretchToParent" IsVisible="@HasNoReports">
+                  <Children>
+                    <TextWidget WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren" HorizontalAlignment="Center" VerticalAlignment="Center" Brush="EncyclopediaNavBar.Text" Brush.TextHorizontalAlignment="Center" Text="@EmptyText" />
+                  </Children>
+                </Widget>
+
+              </Children>
+            </Widget>
+
+          </Children>
+        </BrushWidget>
+
+      </Children>
+    </BrushWidget>
+  </Window>
+</Prefab>

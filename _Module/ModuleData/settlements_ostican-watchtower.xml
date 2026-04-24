@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Settlements>
+	<Settlement
+		id="ostican_watchtower"
+		name="Ostican Watchtower"
+		posX="159"
+		posY="530.5"
+		gate_posX="157.895"
+		gate_posY="531.084">
+		<Components>
+			<CustomSettlementComponent
+				id="ostican_watchtower_comp"
+				component_name="WatchtowerSettlementComponent"
+				bound="Settlement.town_V8"
+				background_crop_position="0.0"
+				background_mesh="gui_bg_castle_vlanda"
+				wait_mesh="wait_vlandia_town"
+			/>
+		</Components>
+	</Settlement>
+</Settlements>

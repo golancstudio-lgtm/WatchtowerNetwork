@@ -1,0 +1,81 @@
+<Project Sdk="Bannerlord.BUTRModule.Sdk/1.1.0.124">
+
+  <PropertyGroup>
+    <Version>1.0.1</Version>
+    <TargetFrameworks>net472;net6</TargetFrameworks>
+    <Platforms>x64</Platforms>
+    <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+    <LangVersion>10.0</LangVersion>
+    <Nullable>enable</Nullable>
+
+    <BuildForWindows>false</BuildForWindows>
+    <BuildForWindowsStore>false</BuildForWindowsStore>
+    
+    <ModuleId>$(MSBuildProjectName)</ModuleId>
+    <ModuleName>Watchtower Network</ModuleName>
+    <ModuleUrl></ModuleUrl>
+    <GameFolder>$(BANNERLORD_GAME_DIR)</GameFolder>
+    <!-- Module manually override GameVersion -->
+    <!-- <OverrideGameVersion>v1.0.0</OverrideGameVersion> -->
+    <TargetName>WatchtowerNetwork</TargetName>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="$(TargetFramework) == 'net472'">
+    <!-- Steam/GOG/Epic versions of the game -->
+    <BuildForWindows>true</BuildForWindows>
+  </PropertyGroup>
+  <PropertyGroup Condition="$(TargetFramework) == 'net6'">
+    <!-- Xbox Game Pass PC version of the game -->
+    <BuildForWindowsStore>true</BuildForWindowsStore>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+  </PropertyGroup>
+
+  <!-- Development Variables -->
+  <PropertyGroup>
+    <HarmonyVersion>2.2.2</HarmonyVersion>
+    <UIExtenderExVersion>2.8.0</UIExtenderExVersion>
+    <ButterLibVersion>2.8.11</ButterLibVersion>
+    <MCMVersion>5.9.1</MCMVersion>
+    <HarmonyExtensionsVersion>3.2.0.77</HarmonyExtensionsVersion>
+    <!--
+    <BUTRSharedVersion>3.0.0.135</BUTRSharedVersion>
+    <BUTRModuleManagerVersion>5.0.198</BUTRModuleManagerVersion>
+    -->
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.5-beta1" PrivateAssets="all" IncludeAssets="compile" />
+    <PackageReference Include="BUTR.Harmony.Analyzer" Version="1.0.1.50" PrivateAssets="all" IncludeAssets="runtime; build; native; contentfiles; analyzers; buildtransitive" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Update="Bannerlord.ButterLib" Version="2.10.3" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Update="Bannerlord.MCM" Version="5.11.3" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Update="Bannerlord.ReferenceAssemblies" Version="1.3.15.110062" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Update="Bannerlord.UIExtenderEx" Version="2.13.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Update="Lib.Harmony" Version="2.4.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Update="Microsoft.SourceLink.GitHub" Version="11.0.100-preview.2.26159.112" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Remove="BL_Source_Decompiled\**\*.cs" />
+    <None Remove="BL_Source_Decompiled\**\*" />
+    <EmbeddedResource Remove="BL_Source_Decompiled\**\*" />
+  </ItemGroup>
+  
+</Project>
