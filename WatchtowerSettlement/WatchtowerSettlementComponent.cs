@@ -1,6 +1,7 @@
 ﻿using Helpers;
 using System;
 using System.Collections.Generic;
+using System.ComponentModel;
 using System.Linq;
 using System.Xml;
 using TaleWorlds.CampaignSystem;
@@ -14,12 +15,13 @@ using TaleWorlds.ObjectSystem;
 
 namespace WatchtowerNetwork.WatchtowerSettlement;
 
-internal class WatchtowerSettlementComponent : SettlementComponent
+internal partial class WatchtowerSettlementComponent : SettlementComponent, INotifyPropertyChanged
 {
     private const float BaseRadius = 20f;
     private const float BonusRadiusPerSkillPoint = 0.2f;
     private const float BaseMessageSpeed = 10f;
     private const float BonusMessageSpeedPerSkillPoint = 0.05f;
+    private const int DaysReportHistory = 7;
 
     public override IFaction? MapFaction => _bound?.MapFaction;
     public override bool IsTown => false;
@@ -27,31 +29,33 @@ internal class WatchtowerSettlementComponent : SettlementComponent
 
     private Settlement? _bound;
     private float _scoutingSkill = 50f;
+    private int _alarmTroopCount = 100;
     private List<WatchtowerReport> _watchtowerReports = new List<WatchtowerReport>();
 
     public override void Deserialize(MBObjectManager objectManager, XmlNode node)
     {
         base.Deserialize(objectManager, node);
-        if (node.Attributes["background_crop_position"] != null)
+        if (node.Attributes!["background_crop_position"] != null)
         {
-            BackgroundCropPosition = float.Parse(node.Attributes["background_crop_position"].Value);
+            BackgroundCropPosition = float.Parse(node.Attributes["background_crop_position"]!.Value);
         }
-        if (node.Attributes["background_mesh"] != null)
+        if (node.Attributes!["background_mesh"] != null)
         {
-            BackgroundMeshName = node.Attributes["background_mesh"].Value;
+            BackgroundMeshName = node.Attributes["background_mesh"]!.Value;
         }
-        if (node.Attributes["wait_mesh"] != null)
+        if (node.Attributes!["wait_mesh"] != null)
         {
-            WaitMeshName = node.Attributes["wait_mesh"].Value;
+            WaitMeshName = node.Attributes["wait_mesh"]!.Value;
         }
 
         Bound = (Settlement)objectManager.ReadObjectReferenceFromXml("bound", typeof(Settlement), node);
         ScoutingSkill = 50f;
+
     }
 
-    public override void OnSessionStart()
+    protected override void PreAfterLoad()
     {
-        base.OnSessionStart();
+        base.PreAfterLoad();
         Settlement.Culture = Bound?.Culture;
     }
 
@@ -86,21 +90,23 @@ internal class WatchtowerSettlementComponent : SettlementComponent
             {
                 if (_watchtowerReports[i].Party == party)
                 {
-                    _watchtowerReports[i].UpdateReport();
+                    WatchtowerReport watchtowerReport = _watchtowerReports[i];
+                    watchtowerReport.UpdateReport();
+                    _watchtowerReports[i] = watchtowerReport;
                     updated = true;
                     break;
                 }
             }
             if (!updated)
             {
-                WatchtowerReport watchtowerReport = new WatchtowerReport(party);
+                WatchtowerReport watchtowerReport = new WatchtowerReport(party, MapFaction);
                 if (watchtowerReport.IsValid)
                 {
                     _watchtowerReports.Add(watchtowerReport);
                 }
             }
         }
-        RemoveOldReports(CampaignTime.DaysFromNow(-7));
+        RemoveOldReports(CampaignTime.DaysFromNow(-DaysReportHistory));
         ValidateReports();
     }
 
@@ -120,28 +126,29 @@ internal class WatchtowerSettlementComponent : SettlementComponent
             if (_scoutingSkill != value)
             {
                 _scoutingSkill = value;
-                _onScoutingSkillChanged?.Invoke(_scoutingSkill);
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs("ScoutingSkill"));
             }
 
         }
     }
-    private event Action<float>? _onScoutingSkillChanged;
-    public event Action<float> OnScoutingSkillChanged
+    public int AlarmTroopCount
     {
-        add
+        get => _alarmTroopCount;
+        private set
         {
-            if (_onScoutingSkillChanged is null || !_onScoutingSkillChanged.GetInvocationList().Contains(value))
+            if (_alarmTroopCount != value)
             {
-                _onScoutingSkillChanged += value;
+                _alarmTroopCount = value;
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs("AlarmTroopCount"));
             }
         }
-        remove => _onScoutingSkillChanged -= value;
     }
+    public event PropertyChangedEventHandler? PropertyChanged;
 
     public float Radius => BaseRadius + BonusRadiusPerSkillPoint * ScoutingSkill;
     public float MessageSpeed => BaseMessageSpeed + BonusMessageSpeedPerSkillPoint * ScoutingSkill;
 
-    internal IEnumerable<WatchtowerReport> GetCurrentReport() => _watchtowerReports;
+    internal IEnumerable<WatchtowerReport> GetWatchtowerReports() => _watchtowerReports;
 
     internal IEnumerable<TextObject> GetCurrentReportTexts()
     {
@@ -153,9 +160,6 @@ internal class WatchtowerSettlementComponent : SettlementComponent
             }
         }
     }
-
-    internal void OrderBy<TKey>(Func<WatchtowerReport, TKey> keySelector) => _watchtowerReports = _watchtowerReports.OrderBy(keySelector).ToList();
-    internal void OrderByDescending<TKey>(Func<WatchtowerReport, TKey> keySelector) => _watchtowerReports = _watchtowerReports.OrderByDescending(keySelector).ToList();
 
     internal bool TryAddReport(WatchtowerReport report)
     {
@@ -171,157 +175,5 @@ internal class WatchtowerSettlementComponent : SettlementComponent
 
         _watchtowerReports.Add(report);
         return true;
-    }
-
-    internal struct WatchtowerReport
-    {
-        public MobileParty Party { get; private set; }
-        public bool IsArmy { get; private set; }
-        public int SoldiersCount { get; private set; }
-        public int PrisonersCount { get; private set; }
-        public MobileParty LastKnownTargetParty { get; private set; }
-        public MobileParty LastKnownShortTermTargetParty { get; private set; }
-        public Settlement LastKnownTargetSettlement { get; private set; }
-        public Settlement LastKnownShortTermTargetSettlement { get; private set; }
-        public AiBehavior LastKnownAiBehavior { get; private set; }
-        public AiBehavior LastKnownShortTermAiBehavior { get; private set; }
-        public CampaignTime LastUpdateTime { get; private set; }
-        public bool IsEnemy { get { return Hero.MainHero.MapFaction.IsAtWarWith(Party.MapFaction); } }
-
-        public WatchtowerReport(MobileParty party)
-        {
-            Party = party;
-            IsArmy = party.Army is not null;
-            SoldiersCount = IsArmy ? party.Army.Parties.Sum(p => p.MemberRoster.TotalManCount) : party.MemberRoster.TotalManCount;
-            PrisonersCount = IsArmy ? party.Army.Parties.Sum(p => p.PrisonRoster.TotalManCount) : party.PrisonRoster.TotalManCount;
-            LastKnownTargetParty = party.TargetParty;
-            LastKnownShortTermTargetParty = party.ShortTermTargetParty;
-            LastKnownTargetSettlement = party.TargetSettlement;
-            LastKnownShortTermTargetSettlement = party.ShortTermTargetSettlement;
-            LastKnownAiBehavior = party.DefaultBehavior;
-            LastKnownShortTermAiBehavior = party.ShortTermBehavior;
-            LastUpdateTime = CampaignTime.Now;
-        }
-
-        public void UpdateReport()
-        {
-            IsArmy = Party.Army is not null;
-            SoldiersCount = IsArmy ? Party.Army.Parties.Sum(p => p.MemberRoster.TotalManCount) : Party.MemberRoster.TotalManCount;
-            PrisonersCount = IsArmy ? Party.Army.Parties.Sum(p => p.PrisonRoster.TotalManCount) : Party.PrisonRoster.TotalManCount;
-            LastKnownTargetParty = Party.TargetParty;
-            LastKnownShortTermTargetParty = Party.ShortTermTargetParty;
-            LastKnownTargetSettlement = Party.TargetSettlement;
-            LastKnownShortTermTargetSettlement = Party.ShortTermTargetSettlement;
-            LastKnownAiBehavior = Party.DefaultBehavior;
-            LastKnownShortTermAiBehavior = Party.ShortTermBehavior;
-            LastUpdateTime = CampaignTime.Now;
-        }
-
-        internal void ApplySavedSnapshot(int soldiersCount, int prisonersCount, CampaignTime lastUpdateTime)
-        {
-            SoldiersCount = soldiersCount;
-            PrisonersCount = prisonersCount;
-            LastUpdateTime = lastUpdateTime;
-        }
-
-        public bool IsValid
-        {
-            get => TextReport is not null && !string.IsNullOrEmpty(TextReport.Value);
-        }
-
-        public TextObject? TextReport
-        {
-            get
-            {
-                if (SoldiersCount == 0 || IsArmy && Party.Army.LeaderParty != Party)
-                {
-                    return null;
-                }
-                TextObject textObject = new TextObject("{=1OUB7rluv}•  {TIME} - {NAME} is leading {TYPE} of {TROOPS} troops. They are {BEHAVIOR} Prisoner count: {PRISONERS}.");
-                textObject.SetTextVariable("TIME", LastUpdateTime.ToString());
-                if (Party.LeaderHero is null)
-                {
-                    TextObject name = Party.Name;
-                    if (Party.IsCaravan)
-                    {
-                        name = Party.Name.AddEncyclopediaLink(Party.CaravanPartyComponent.Owner);
-                    }
-                    else if (Party.IsGarrison)
-                    {
-                        name = Party.Name.AddEncyclopediaLink(Party.GarrisonPartyComponent.HomeSettlement);
-                    }
-                    else if (Party.IsMilitia)
-                    {
-                        name = Party.Name.AddEncyclopediaLink((Party.PartyComponent as MilitiaPartyComponent).HomeSettlement);
-                    }
-                    else if (Party.IsPatrolParty)
-                    {
-                        name = Party.Name.AddEncyclopediaLink(Party.PatrolPartyComponent.HomeSettlement);
-                    }
-                    else if (Party.IsVillager)
-                    {
-                        name = Party.Name.AddEncyclopediaLink(Party.VillagerPartyComponent.HomeSettlement);
-                    }
-                    else if (Party.IsBandit && !Party.MemberRoster.GetTroopRoster().IsEmpty())
-                    {
-                        name = Party.Name.AddEncyclopediaLink(Party.MemberRoster.GetTroopRoster().Aggregate((m, c) => c.Character.GetBattleTier() > m.Character.GetBattleTier() ? c : m).Character);
-                    }
-                    textObject.SetTextVariable("NAME", name);
-                }
-                else
-                {
-                    textObject.SetTextVariable("NAME", Party.LeaderHero.EncyclopediaLinkWithName);
-                }
-                textObject.SetTextVariable("TYPE", (IsArmy ? new TextObject("{=E3VRLZuad}an army") : new TextObject("{=BTWfLQlD8}a party")).ToString());
-                textObject.SetTextVariable("TROOPS", SoldiersCount);
-                TextObject behaviorText = Party.GetBehaviorText(true);
-                if (behaviorText.Value == "{=QXBf26Rv}Unknown Behavior.")
-                {
-                    textObject.SetTextVariable("BEHAVIOR", new TextObject("{=9PsOPlCnL}doing an ").Join(behaviorText));
-                }
-                else
-                {
-                    if (behaviorText.Value.Last() == '.')
-                    {
-                        textObject.SetTextVariable("BEHAVIOR", behaviorText);
-                    }
-                    else
-                    {
-                        textObject.SetTextVariable("BEHAVIOR", behaviorText.Join(new TextObject("{=}.")));
-                    }
-                }
-                if (LastKnownTargetParty is not null)
-                {
-                    if (LastKnownTargetParty.LeaderHero is null)
-                    {
-                        textObject.SetTextVariable("TARGET", LastKnownTargetParty.Name);
-                    }
-                    else
-                    {
-                        textObject.SetTextVariable("TARGET", LastKnownTargetParty.LeaderHero.EncyclopediaLinkWithName);
-                    }
-                }
-                else if (LastKnownTargetSettlement is not null)
-                {
-                    textObject.SetTextVariable("TARGET", LastKnownTargetSettlement.EncyclopediaLinkWithName);
-                }
-                else
-                {
-                    return null;
-                }
-                
-                textObject.SetTextVariable("PRISONERS", PrisonersCount);
-                return textObject;
-            }
-        }
-        public override string ToString()
-        {
-            TextObject? text = TextReport;
-            if (text is null)
-            {
-                return "";
-            }
-            return text.ToString();
-        }
     }
 }

@@ -35,6 +35,7 @@ public class SubModule : MBSubModuleBase
             campaignStarter.AddBehavior(new HeatmapCampaignBehavior());
             campaignStarter.AddBehavior(new PlayerWatchtowerVisitCampaignBehavior());
             campaignStarter.AddBehavior(new WatchtowerManagerCampaignBehavior());
+            campaignStarter.AddBehavior(new WatchtowerMessengersManagerCampaignBehavior());
         }
     }
 

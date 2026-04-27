@@ -15,23 +15,6 @@ namespace WatchtowerNetwork.Patches;
 [HarmonyPatch(typeof(GameLoadingState), "OnTick")]
 internal static class GameLoadingStateOnTick
 {
-    //private static void Prefix()
-    //{
-    //    if (gameManagerLoadingStep != GameManagerLoadingSteps.FinishLoadingFifthStep)
-    //    {
-    //        return;
-    //    }
-
-    //    HeatmapCampaignBehavior.EnsureSessionLaunchWorkStarted();
-    //    if (!HeatmapCampaignBehavior.IsSessionLaunchWorkCompleted)
-    //    {
-    //        nextStep = gameManagerLoadingStep;
-    //    }
-    //    else
-    //    {
-    //        nextStep = GameManagerLoadingSteps.None;
-    //    }
-    //}
 
     private static Traverse? traverse, lf;
     private static MBGameManager? gl;

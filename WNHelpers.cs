@@ -14,6 +14,7 @@ using TaleWorlds.Library;
 using TaleWorlds.Localization;
 using TaleWorlds.ModuleManager;
 using WatchtowerNetwork.WatchtowerSettlement;
+using MathF = TaleWorlds.Library.MathF;
 
 namespace WatchtowerNetwork
 {
@@ -67,18 +68,30 @@ namespace WatchtowerNetwork
 
         internal static bool IsWatchtower(this Settlement settlement) => settlement.TryGetWatchtower(out _);
 
-        internal static void SwitchToMenuIfThereIsAnInterrupt(string currentMenuId)
+        internal static IEnumerable<WatchtowerSettlementComponent> AllWatchtowers
         {
-            string genericStateMenu = Campaign.Current.Models.EncounterGameMenuModel.GetGenericStateMenu();
-            if (genericStateMenu != currentMenuId)
+            get
             {
-                if (!string.IsNullOrEmpty(genericStateMenu))
+                foreach (var settlement in Settlement.All)
                 {
-                    GameMenu.SwitchToMenu(genericStateMenu);
-                    return;
+                    if (settlement.TryGetWatchtower(out WatchtowerSettlementComponent? watchtower) && watchtower is not null)
+                    {
+                        yield return watchtower;
+                    }
                 }
-                GameMenu.ExitToLast();
             }
+        }
+
+        internal static CampaignVec2 MoveTowards(this CampaignVec2 current, CampaignVec2 target, float maxDistanceDelta)
+        {
+            float distance = current.Distance(target);
+            if (distance <= maxDistanceDelta || distance <= float.Epsilon)
+            {
+                return target;
+            }
+
+            Vec2 direction = (target - current).ToVec2().Normalized();
+            return current + maxDistanceDelta * direction;
         }
 
         internal static TextObject Join(this TextObject obj1, string seperator, params TextObject[] objs)
@@ -127,7 +140,7 @@ namespace WatchtowerNetwork
                 }
                 else if (party.IsMilitia)
                 {
-                    return HyperlinkTexts.GetHeroHyperlinkText((party.PartyComponent as MilitiaPartyComponent).HomeSettlement.EncyclopediaLink, textObject.CopyTextObject());
+                    return HyperlinkTexts.GetHeroHyperlinkText((party.PartyComponent as MilitiaPartyComponent)!.HomeSettlement.EncyclopediaLink, textObject.CopyTextObject());
                 }
                 else if (party.IsPatrolParty)
                 {
@@ -137,7 +150,7 @@ namespace WatchtowerNetwork
                 {
                     return HyperlinkTexts.GetHeroHyperlinkText(party.VillagerPartyComponent.HomeSettlement.EncyclopediaLink, textObject.CopyTextObject());
                 }
-                else if (party.IsBandit)
+                else if (party.IsBandit && !party.MemberRoster.GetTroopRoster().IsEmpty())
                 {
                     return HyperlinkTexts.GetHeroHyperlinkText(party.MemberRoster.GetTroopRoster().Aggregate((m, c) => c.Character.GetBattleTier() > m.Character.GetBattleTier() ? c : m).Character.EncyclopediaLink, textObject.CopyTextObject());
                 }
@@ -155,7 +168,7 @@ namespace WatchtowerNetwork
 
         internal static TextObject AddEncyclopediaLink(this TextObject textObject, Settlement settlement)
         {
-            if (textObject == null || settlement == null)
+            if (textObject == null || settlement == null || settlement.IsHideout)
             {
                 return textObject?.CopyTextObject() ?? TextObject.GetEmpty();
             }
@@ -174,139 +187,100 @@ namespace WatchtowerNetwork
             return false;
         }
 
-        internal static TextObject GetBehaviorText(this MobileParty party, bool links)
+        internal static TextObject GetBehaviorTextWithLinks(this MobileParty party) => party.GetBehaviorText(useLinks: true);
+
+        internal static TextObject GetBehaviorText(this MobileParty party, bool useLinks)
         {
-            if (!links)
-            {
-                return party.GetBehaviorText();
-            }
             TextObject textObject = TextObject.GetEmpty();
             if (party.Army != null && (party.AttachedTo != null || party.Army.LeaderParty == party) && !party.Army.LeaderParty.IsEngaging && !party.Army.LeaderParty.IsFleeing())
             {
-                textObject = party.Army.GetLongTermBehaviorText(true);
+                textObject = party.Army.GetLongTermBehaviorText(setWithLink: useLinks);
             }
             if (textObject.IsEmpty())
             {
+                float estimatedLandRatio;
                 if (party.DefaultBehavior == AiBehavior.Hold || party.ShortTermBehavior == AiBehavior.Hold || (party.IsMainParty && Campaign.Current.IsMainPartyWaiting))
                 {
-                    if (party.IsVillager && party.HasNavalNavigationCapability)
-                    {
-                        textObject = new TextObject("{=WYxUqYpu}Fishing.", null);
-                    }
-                    else
-                    {
-                        textObject = new TextObject("{=RClxLG6N}Holding.", null);
-                    }
+                    textObject = ((!party.IsVillager || !party.HasNavalNavigationCapability) ? new TextObject("{=RClxLG6N}Holding.") : new TextObject("{=WYxUqYpu}Fishing."));
                 }
                 else if (party.ShortTermBehavior == AiBehavior.EngageParty && party.ShortTermTargetParty != null)
                 {
-                    textObject = new TextObject("{=5bzk75Ql}Engaging {TARGET_PARTY}.", null);
-                    textObject.SetTextVariable("TARGET_PARTY", party.ShortTermTargetParty.Name.AddEncyclopediaLink(party.ShortTermTargetParty));
+                    textObject = new TextObject("{=5bzk75Ql}Engaging {TARGET_PARTY}.");
+                    textObject.SetTextVariable("TARGET_PARTY", GetPartyName(party.ShortTermTargetParty, useLinks));
                 }
                 else if (party.DefaultBehavior == AiBehavior.GoAroundParty && party.ShortTermBehavior == AiBehavior.GoToPoint)
                 {
-                    textObject = new TextObject("{=XYAVu2f0}Chasing {TARGET_PARTY}.", null);
-                    textObject.SetTextVariable("TARGET_PARTY", party.TargetParty.Name.AddEncyclopediaLink(party.TargetParty));
+                    textObject = new TextObject("{=XYAVu2f0}Chasing {TARGET_PARTY}.");
+                    textObject.SetTextVariable("TARGET_PARTY", GetPartyName(party.TargetParty, useLinks));
                 }
                 else if (party.ShortTermBehavior == AiBehavior.FleeToParty && party.ShortTermTargetParty != null)
                 {
-                    textObject = new TextObject("{=R8vuwKaf}Running from {TARGET_PARTY} to ally party.", null);
-                    textObject.SetTextVariable("TARGET_PARTY", party.ShortTermTargetParty.Name.AddEncyclopediaLink(party.ShortTermTargetParty));
+                    textObject = new TextObject("{=R8vuwKaf}Running from {TARGET_PARTY} to ally party.");
+                    textObject.SetTextVariable("TARGET_PARTY", GetPartyName(party.ShortTermTargetParty, useLinks));
                 }
                 else if (party.ShortTermBehavior == AiBehavior.FleeToPoint)
                 {
                     if (party.ShortTermTargetParty != null)
                     {
-                        textObject = new TextObject("{=AcMayd1p}Running from {TARGET_PARTY}.", null);
-                        textObject.SetTextVariable("TARGET_PARTY", party.ShortTermTargetParty.Name.AddEncyclopediaLink(party.ShortTermTargetParty));
+                        textObject = new TextObject("{=AcMayd1p}Running from {TARGET_PARTY}.");
+                        textObject.SetTextVariable("TARGET_PARTY", GetPartyName(party.ShortTermTargetParty, useLinks));
                     }
                     else
                     {
-                        textObject = new TextObject("{=5W2oZOwu}Sailing away from storm.", null);
+                        textObject = new TextObject("{=5W2oZOwu}Sailing away from storm.");
                     }
                 }
                 else if (party.ShortTermBehavior == AiBehavior.FleeToGate && party.ShortTermTargetSettlement != null)
                 {
-                    textObject = new TextObject("{=p0C3WfHE}Running to settlement.", null);
+                    textObject = new TextObject("{=p0C3WfHE}Running to settlement.");
                 }
                 else if (party.DefaultBehavior == AiBehavior.DefendSettlement)
                 {
-                    textObject = new TextObject("{=rGy8vjOv}Defending {TARGET_SETTLEMENT}.", null);
+                    textObject = new TextObject("{=rGy8vjOv}Defending {TARGET_SETTLEMENT}.");
                     if (party.ShortTermBehavior == AiBehavior.GoToPoint)
                     {
                         if (!party.IsMoving)
                         {
-                            textObject = new TextObject("{=LAt87KjS}Waiting for ally parties to defend {TARGET_SETTLEMENT}.", null);
+                            textObject = new TextObject("{=LAt87KjS}Waiting for ally parties to defend {TARGET_SETTLEMENT}.");
                         }
                         else if (party.ShortTermTargetParty != null && party.ShortTermTargetParty.MapFaction == party.MapFaction)
                         {
-                            textObject = new TextObject("{=yD7rL5Nc}Helping ally party to defend {TARGET_SETTLEMENT}.", null);
+                            textObject = new TextObject("{=yD7rL5Nc}Helping ally party to defend {TARGET_SETTLEMENT}.");
                         }
                     }
-                    textObject.SetTextVariable("TARGET_SETTLEMENT", party.TargetSettlement.Name.AddEncyclopediaLink(party.TargetSettlement));
+                    textObject.SetTextVariable("TARGET_SETTLEMENT", GetSettlementName(party.TargetSettlement, useLinks));
                 }
                 else if (party.DefaultBehavior == AiBehavior.RaidSettlement)
                 {
                     Settlement targetSettlement = party.TargetSettlement;
-                    float num;
-                    if (Campaign.Current.Models.MapDistanceModel.GetDistance(party, targetSettlement, party.IsTargetingPort, party.NavigationCapability, out num) > Campaign.Current.GetAverageDistanceBetweenClosestTwoTownsWithNavigationType(MobileParty.NavigationType.All) * 0.5f)
-                    {
-                        textObject = new TextObject("{=BqIRb85N}Going to raid {TARGET_SETTLEMENT}", null);
-                    }
-                    else
-                    {
-                        textObject = new TextObject("{=VtWa9Pmh}Raiding {TARGET_SETTLEMENT}.", null);
-                    }
-                    textObject.SetTextVariable("TARGET_SETTLEMENT", targetSettlement.Name.AddEncyclopediaLink(targetSettlement));
+                    textObject = ((!(Campaign.Current.Models.MapDistanceModel.GetDistance(party, targetSettlement, party.IsTargetingPort, party.NavigationCapability, out estimatedLandRatio) > Campaign.Current.GetAverageDistanceBetweenClosestTwoTownsWithNavigationType(MobileParty.NavigationType.All) * 0.5f)) ? new TextObject("{=VtWa9Pmh}Raiding {TARGET_SETTLEMENT}.") : new TextObject("{=BqIRb85N}Going to raid {TARGET_SETTLEMENT}"));
+                    textObject.SetTextVariable("TARGET_SETTLEMENT", GetSettlementName(targetSettlement, useLinks));
                 }
                 else if (party.DefaultBehavior == AiBehavior.BesiegeSettlement)
                 {
-                    textObject = new TextObject("{=JTxI3sW2}Besieging {TARGET_SETTLEMENT}.", null);
-                    textObject.SetTextVariable("TARGET_SETTLEMENT", party.TargetSettlement.Name.AddEncyclopediaLink(party.TargetSettlement));
+                    textObject = new TextObject("{=JTxI3sW2}Besieging {TARGET_SETTLEMENT}.");
+                    textObject.SetTextVariable("TARGET_SETTLEMENT", GetSettlementName(party.TargetSettlement, useLinks));
                 }
                 else if (party.ShortTermBehavior == AiBehavior.GoToPoint && party.DefaultBehavior != AiBehavior.EscortParty)
                 {
                     if (party.ShortTermTargetParty != null)
                     {
-                        textObject = new TextObject("{=AcMayd1p}Running from {TARGET_PARTY}.", null);
-                        textObject.SetTextVariable("TARGET_PARTY", party.ShortTermTargetParty.Name.AddEncyclopediaLink(party.ShortTermTargetParty));
+                        textObject = new TextObject("{=AcMayd1p}Running from {TARGET_PARTY}.");
+                        textObject.SetTextVariable("TARGET_PARTY", GetPartyName(party.ShortTermTargetParty, useLinks));
                     }
-                    else if (party.TargetSettlement != null)
+                    else if (party.TargetSettlement == null)
                     {
-                        if (party.DefaultBehavior == AiBehavior.PatrolAroundPoint)
-                        {
-                            bool flag = party.IsLordParty && !party.AiBehaviorTarget.IsOnLand;
-                            float num;
-                            if (Campaign.Current.Models.MapDistanceModel.GetDistance(party, party.TargetSettlement, party.IsTargetingPort, party.NavigationCapability, out num) > Campaign.Current.GetAverageDistanceBetweenClosestTwoTownsWithNavigationType(MobileParty.NavigationType.All) * 0.5f)
-                            {
-                                textObject = (flag ? new TextObject("{=avhlH79s}Heading to patrol the coastal waters off {TARGET_SETTLEMENT}.", null) : new TextObject("{=MNoogAgk}Heading to patrol around {TARGET_SETTLEMENT}.", null));
-                            }
-                            else
-                            {
-                                textObject = (flag ? new TextObject("{=8qvUbTvW}Guarding the coastal waters off {TARGET_SETTLEMENT}.", null) : new TextObject("{=yUVv3z5V}Patrolling around {TARGET_SETTLEMENT}.", null));
-                            }
-                            textObject.SetTextVariable("TARGET_SETTLEMENT", (party.TargetSettlement != null) ? party.TargetSettlement.Name.AddEncyclopediaLink(party.TargetSettlement) : party.HomeSettlement.Name.AddEncyclopediaLink(party.HomeSettlement));
-                        }
-                        else
-                        {
-                            textObject = new TextObject("{=TaK6ydAx}Travelling.", null);
-                        }
-                    }
-                    else if (party.DefaultBehavior == AiBehavior.MoveToNearestLandOrPort)
-                    {
-                        textObject = new TextObject("{=8vuOdcpy}Moving to the nearest shore.", null);
+                        textObject = ((party.DefaultBehavior == AiBehavior.MoveToNearestLandOrPort) ? new TextObject("{=8vuOdcpy}Moving to the nearest shore.") : ((party.DefaultBehavior == AiBehavior.PatrolAroundPoint) ? new TextObject("{=BifGz0h4}Patrolling.") : ((!party.IsInRaftState) ? new TextObject("{=XAL3t1bs}Going to a point.") : new TextObject("{=vxdIEThU}Drifting to shore."))));
                     }
                     else if (party.DefaultBehavior == AiBehavior.PatrolAroundPoint)
                     {
-                        textObject = new TextObject("{=BifGz0h4}Patrolling.", null);
-                    }
-                    else if (party.IsInRaftState)
-                    {
-                        textObject = new TextObject("{=vxdIEThU}Drifting to shore.", null);
+                        bool flag = party.IsLordParty && !party.AiBehaviorTarget.IsOnLand;
+                        textObject = ((!(Campaign.Current.Models.MapDistanceModel.GetDistance(party, party.TargetSettlement, party.IsTargetingPort, party.NavigationCapability, out estimatedLandRatio) > Campaign.Current.GetAverageDistanceBetweenClosestTwoTownsWithNavigationType(MobileParty.NavigationType.All) * 0.5f)) ? (flag ? new TextObject("{=8qvUbTvW}Guarding the coastal waters off {TARGET_SETTLEMENT}.") : new TextObject("{=yUVv3z5V}Patrolling around {TARGET_SETTLEMENT}.")) : (flag ? new TextObject("{=avhlH79s}Heading to patrol the coastal waters off {TARGET_SETTLEMENT}.") : new TextObject("{=MNoogAgk}Heading to patrol around {TARGET_SETTLEMENT}.")));
+                        textObject.SetTextVariable("TARGET_SETTLEMENT", GetSettlementName((party.TargetSettlement != null) ? party.TargetSettlement : party.HomeSettlement, useLinks));
                     }
                     else
                     {
-                        textObject = new TextObject("{=XAL3t1bs}Going to a point.", null);
+                        textObject = new TextObject("{=TaK6ydAx}Travelling.");
                     }
                 }
                 else if (party.ShortTermBehavior == AiBehavior.GoToSettlement || party.DefaultBehavior == AiBehavior.GoToSettlement)
@@ -315,64 +289,69 @@ namespace WatchtowerNetwork
                     {
                         if (party.DefaultBehavior == AiBehavior.MoveToNearestLandOrPort)
                         {
-                            textObject = new TextObject("{=amHKbKfV}Running away from the sea.", null);
-                            textObject.SetTextVariable("TARGET_PARTY", party.ShortTermTargetSettlement.Name.AddEncyclopediaLink(party.ShortTermTargetSettlement));
+                            textObject = new TextObject("{=amHKbKfV}Running away from the sea.");
+                            textObject.SetTextVariable("TARGET_PARTY", GetSettlementName(party.ShortTermTargetSettlement, useLinks));
                         }
                         else
                         {
-                            if (party.ShortTermTargetParty == null || !party.ShortTermTargetParty.MapFaction.IsAtWarWith(party.MapFaction))
-                            {
-                                textObject = new TextObject("{=EQHq3bHM}Travelling to {TARGET_PARTY}", null);
-                            }
-                            else
-                            {
-                                textObject = new TextObject("{=NRpbagbZ}Running to {TARGET_PARTY}.", null);
-                            }
-                            textObject.SetTextVariable("TARGET_PARTY", party.ShortTermTargetSettlement.Name.AddEncyclopediaLink(party.ShortTermTargetSettlement));
+                            textObject = ((party.ShortTermTargetParty != null && party.ShortTermTargetParty.MapFaction.IsAtWarWith(party.MapFaction)) ? new TextObject("{=NRpbagbZ}Running to {TARGET_PARTY}.") : new TextObject("{=EQHq3bHM}Travelling to {TARGET_PARTY}"));
+                            textObject.SetTextVariable("TARGET_PARTY", GetSettlementName(party.ShortTermTargetSettlement, useLinks));
                         }
                     }
                     else if (party.DefaultBehavior == AiBehavior.GoToSettlement && party.TargetSettlement != null)
                     {
-                        if (party.CurrentSettlement == party.TargetSettlement)
-                        {
-                            textObject = new TextObject("{=Y65gdbrx}Waiting in {TARGET_PARTY}.", null);
-                        }
-                        else
-                        {
-                            textObject = new TextObject("{=EQHq3bHM}Travelling to {TARGET_PARTY}", null);
-                        }
-                        textObject.SetTextVariable("TARGET_PARTY", party.TargetSettlement.Name.AddEncyclopediaLink(party.TargetSettlement));
+                        textObject = ((party.CurrentSettlement != party.TargetSettlement) ? new TextObject("{=EQHq3bHM}Travelling to {TARGET_PARTY}") : new TextObject("{=Y65gdbrx}Waiting in {TARGET_PARTY}."));
+                        textObject.SetTextVariable("TARGET_PARTY", GetSettlementName(party.TargetSettlement, useLinks));
                     }
                     else if (party.ShortTermTargetParty != null)
                     {
-                        textObject = new TextObject("{=AcMayd1p}Running from {TARGET_PARTY}.", null);
-                        textObject.SetTextVariable("TARGET_PARTY", party.ShortTermTargetParty.Name.AddEncyclopediaLink(party.ShortTermTargetParty));
+                        textObject = new TextObject("{=AcMayd1p}Running from {TARGET_PARTY}.");
+                        textObject.SetTextVariable("TARGET_PARTY", GetPartyName(party.ShortTermTargetParty, useLinks));
                     }
                     else
                     {
-                        textObject = new TextObject("{=QGyoSLeY}Traveling to a settlement.", null);
+                        textObject = new TextObject("{=QGyoSLeY}Traveling to a settlement.");
                     }
                 }
                 else if (party.ShortTermBehavior == AiBehavior.AssaultSettlement)
                 {
-                    textObject = new TextObject("{=exnL6SS7}Attacking {TARGET_SETTLEMENT}.", null);
-                    textObject.SetTextVariable("TARGET_SETTLEMENT", party.ShortTermTargetSettlement.Name.AddEncyclopediaLink(party.ShortTermTargetSettlement));
+                    textObject = new TextObject("{=exnL6SS7}Attacking {TARGET_SETTLEMENT}.");
+                    textObject.SetTextVariable("TARGET_SETTLEMENT", GetSettlementName(party.ShortTermTargetSettlement, useLinks));
                 }
-                else if (party.DefaultBehavior == AiBehavior.EscortParty || party.ShortTermBehavior == AiBehavior.EscortParty)
+                else if (party.DefaultBehavior != AiBehavior.EscortParty && party.ShortTermBehavior != AiBehavior.EscortParty)
                 {
-                    textObject = new TextObject("{=OpzzCPiP}Following {TARGET_PARTY}.", null);
-                    textObject.SetTextVariable("TARGET_PARTY", (party.ShortTermTargetParty != null) ? party.ShortTermTargetParty.Name.AddEncyclopediaLink(party.ShortTermTargetParty) : party.TargetParty.Name.AddEncyclopediaLink(party.TargetParty));
-                }
-                else if (party.DefaultBehavior == AiBehavior.MoveToNearestLandOrPort)
-                {
-                    textObject = new TextObject("{=amHKbKfV}Running away from the sea.", null);
+                    if (party.DefaultBehavior == AiBehavior.MoveToNearestLandOrPort)
+                    {
+                        textObject = new TextObject("{=amHKbKfV}Running away from the sea.");
+                    }
                 }
                 else
                 {
-                    textObject = new TextObject("{=QXBf26Rv}Unknown Behavior.", null);
+                    textObject = new TextObject("{=OpzzCPiP}Following {TARGET_PARTY}.");
+                    textObject.SetTextVariable("TARGET_PARTY", GetPartyName((party.ShortTermTargetParty != null) ? party.ShortTermTargetParty : party.TargetParty, useLinks));
                 }
             }
             return textObject;
+        }
+
+        private static TextObject GetPartyName(MobileParty? party, bool useLinks)
+        {
+            if (party is null)
+            {
+                return TextObject.GetEmpty();
+            }
+
+            return useLinks ? party.Name.AddEncyclopediaLink(party) : party.Name;
+        }
+
+        private static TextObject GetSettlementName(Settlement? settlement, bool useLinks)
+        {
+            if (settlement is null)
+            {
+                return TextObject.GetEmpty();
+            }
+
+            return useLinks ? settlement.Name.AddEncyclopediaLink(settlement) : settlement.Name;
         }
     }
 }

@@ -27,6 +27,7 @@ namespace WatchtowerNetwork.WatchtowerSettlement.CampaignBehaviors
         private const string LocoBribeGuardsForReports = "{=39qZOSFG3}Bribe guards to view latest reports ({BRIBE_AMOUNT}{GOLD_ICON})";
         private const string LocoOwnedIntroText = "{=dSDr0Jcca}You have arrived to {SETTLEMENT_LINK}. You see the guards keep an eye for any danger around your town {BOUND_SETTLEMENT}";
         private const string LocoIntroText = "{=esSOLExSz}You have arrived to {SETTLEMENT_LINK}. You see the guards keep an eye for any danger around the town {BOUND_SETTLEMENT} which governed by {LORD.LINK}, {FACTION_OFFICIAL} of the {FACTION_TERM}";
+        private const string LocoIntroTextWithoutLeader = "{=EZsGLHYX}You have arrived to {SETTLEMENT_LINK}. You see the guards keep an eye for any danger around the town {BOUND_SETTLEMENT}.";
         private const int NeutralWatchtowerReportBribeCost = 150;
 
         private const string WaitMenuId = "watchtower_place_wait";
@@ -261,6 +262,11 @@ namespace WatchtowerNetwork.WatchtowerSettlement.CampaignBehaviors
                 args.IsEnabled = false;
                 args.Tooltip = new TextObject("{=d0kbtGYn}You don't have enough gold.");
             }
+            if (Settlement.CurrentSettlement.OwnerClan?.Leader is null)
+            {
+                args.IsEnabled = false;
+                args.Tooltip = new TextObject("{=g4yF0H99}There is no one available to accept the bribe.");
+            }
 
             return true;
         }
@@ -273,6 +279,11 @@ namespace WatchtowerNetwork.WatchtowerSettlement.CampaignBehaviors
             }
 
             Hero? watchtowerLeader = Settlement.CurrentSettlement.OwnerClan?.Leader;
+            if (watchtowerLeader is null)
+            {
+                return;
+            }
+
             GiveGoldAction.ApplyBetweenCharacters(Hero.MainHero, watchtowerLeader, NeutralWatchtowerReportBribeCost);
             MarkPaidForNeutralWatchtowerReportsToday(Settlement.CurrentSettlement);
             OpenCurrentWatchtowerReports();
@@ -307,6 +318,7 @@ namespace WatchtowerNetwork.WatchtowerSettlement.CampaignBehaviors
         {
             if (Settlement.CurrentSettlement.TryGetWatchtower(out WatchtowerSettlementComponent? watchtower) && watchtower is not null)
             {
+                watchtower.ValidateReports();
                 _reportsUiController.OpenOrRefresh(watchtower);
             }
         }
@@ -408,35 +420,43 @@ namespace WatchtowerNetwork.WatchtowerSettlement.CampaignBehaviors
             TextObject textObject = new TextObject("");
             if (settlement.IsWatchtower())
             {
+                Hero? ownerLeader = settlement.OwnerClan?.Leader;
                 if (settlement.OwnerClan == Clan.PlayerClan)
                 {
                     textObject = new TextObject(LocoOwnedIntroText);
+                }
+                else if (ownerLeader is null)
+                {
+                    textObject = new TextObject(LocoIntroTextWithoutLeader);
                 }
                 else
                 {
                     textObject = new TextObject(LocoIntroText);
                 }
-                settlement.OwnerClan.Leader.SetPropertiesToTextObject(textObject, "LORD");
-                string text = settlement.OwnerClan.Leader.MapFaction.Culture.StringId;
-                if (settlement.OwnerClan.Leader.IsFemale)
+                if (ownerLeader is not null)
                 {
-                    text += "_f";
-                }
-                if (settlement.OwnerClan.Leader == Hero.MainHero && !Hero.MainHero.MapFaction.IsKingdomFaction)
-                {
-                    textObject.SetTextVariable("FACTION_TERM", Hero.MainHero.Clan.EncyclopediaLinkWithName);
-                    textObject.SetTextVariable("FACTION_OFFICIAL", new TextObject("{=hb30yQPN}leader", null));
-                }
-                else
-                {
-                    textObject.SetTextVariable("FACTION_TERM", settlement.MapFaction.EncyclopediaLinkWithName);
-                    if (settlement.OwnerClan.MapFaction.IsKingdomFaction && settlement.OwnerClan.Leader == settlement.OwnerClan.Leader.MapFaction.Leader)
+                    ownerLeader.SetPropertiesToTextObject(textObject, "LORD");
+                    string text = ownerLeader.MapFaction.Culture.StringId;
+                    if (ownerLeader.IsFemale)
                     {
-                        textObject.SetTextVariable("FACTION_OFFICIAL", GameTexts.FindText("str_faction_ruler", text));
+                        text += "_f";
+                    }
+                    if (ownerLeader == Hero.MainHero && !Hero.MainHero.MapFaction.IsKingdomFaction)
+                    {
+                        textObject.SetTextVariable("FACTION_TERM", Hero.MainHero.Clan.EncyclopediaLinkWithName);
+                        textObject.SetTextVariable("FACTION_OFFICIAL", new TextObject("{=hb30yQPN}leader", null));
                     }
                     else
                     {
-                        textObject.SetTextVariable("FACTION_OFFICIAL", GameTexts.FindText("str_faction_official", text));
+                        textObject.SetTextVariable("FACTION_TERM", settlement.MapFaction.EncyclopediaLinkWithName);
+                        if (ownerLeader.MapFaction.IsKingdomFaction && ownerLeader == ownerLeader.MapFaction.Leader)
+                        {
+                            textObject.SetTextVariable("FACTION_OFFICIAL", GameTexts.FindText("str_faction_ruler", text));
+                        }
+                        else
+                        {
+                            textObject.SetTextVariable("FACTION_OFFICIAL", GameTexts.FindText("str_faction_official", text));
+                        }
                     }
                 }
                 textObject.SetTextVariable("SETTLEMENT_LINK", settlement.EncyclopediaLinkWithName);
@@ -474,7 +494,10 @@ namespace WatchtowerNetwork.WatchtowerSettlement.CampaignBehaviors
 
         private void WaitMenuStopWaitingOnConsequence(MenuCallbackArgs args)
         {
-            PlayerEncounter.Current.IsPlayerWaiting = false;
+            if (PlayerEncounter.Current is not null)
+            {
+                PlayerEncounter.Current.IsPlayerWaiting = false;
+            }
             Campaign.Current.TimeControlMode = CampaignTimeControlMode.Stop;
             GameMenu.SwitchToMenu(GameMenuId);
         }

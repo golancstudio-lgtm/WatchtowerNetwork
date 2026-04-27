@@ -97,7 +97,7 @@ internal static class LoadingProcessHintTracker
             string etaText = BuildEtaText(progressPercent);
 
             title = _currentTask!;
-            description = $"Progress: {progressPercent}%\nETA: {etaText}";
+            description = $"Progress: {progressPercent}% ({_currentStep} from {_totalSteps})\nETA: {etaText}";
             return true;
         }
     }

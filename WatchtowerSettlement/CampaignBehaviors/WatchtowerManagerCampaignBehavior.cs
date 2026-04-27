@@ -2,20 +2,19 @@
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
+using System.Text;
 using TaleWorlds.CampaignSystem;
 using TaleWorlds.CampaignSystem.Party;
 using TaleWorlds.CampaignSystem.Settlements;
-using static WatchtowerNetwork.WatchtowerSettlement.WatchtowerSettlementComponent;
+using TaleWorlds.Localization;
+using TaleWorlds.ObjectSystem;
 
 namespace WatchtowerNetwork.WatchtowerSettlement.CampaignBehaviors;
 
 internal class WatchtowerManagerCampaignBehavior : CampaignBehaviorBase
 {
     private const string SaveKey = "watchtowers_reports_data";
-    private const string SettlementSeparator = "::";
-    private const char ReportSeparator = ',';
-    private const char ReportPartSeparator = '|';
-    private Dictionary<WatchtowerSettlementComponent, List<WatchtowerSettlementComponent.WatchtowerReport>> _cachedReports = new();
+    private Dictionary<WatchtowerSettlementComponent, List<WatchtowerReport>> _cachedReports = new();
 
     public override void RegisterEvents()
     {
@@ -52,12 +51,16 @@ internal class WatchtowerManagerCampaignBehavior : CampaignBehaviorBase
         }
     }
 
+    private void SyncCache(WatchtowerSettlementComponent watchtower)
+    {
+        _cachedReports[watchtower] = watchtower.GetWatchtowerReports().ToList();
+    }
+
     public override void SyncData(IDataStore dataStore)
     {
         List<string> dataToSave = new List<string>();
         if (dataStore.IsSaving)
         {
-            UpdateAllWatchtowerCaches();
             dataToSave = BuildSaveData();
         }
 
@@ -71,124 +74,117 @@ internal class WatchtowerManagerCampaignBehavior : CampaignBehaviorBase
 
     private List<string> BuildSaveData()
     {
+        /**
+         * : - between WatchtowerReport properties
+         * | - between different WatchtowerReports of the same watchtower
+         * # - between watchtowerId and all the WatchtowerReports of this watchtower
+         * Report text is base64-encoded so links and localized text cannot collide with delimiters.
+         **/
         List<string> data = new();
         foreach (KeyValuePair<WatchtowerSettlementComponent, List<WatchtowerReport>> cachedReport in _cachedReports)
         {
-            string watchtowerSettlementId = cachedReport.Key?.Settlement?.StringId ?? string.Empty;
-            if (watchtowerSettlementId.Length == 0)
-            {
-                continue;
-            }
-
-            HashSet<string> reportEntries = new();
+            string watchtowerId = cachedReport.Key.StringId;
+            List<string> entries = new List<string>();
             foreach (WatchtowerReport report in cachedReport.Value)
             {
-                string partyId = report.Party?.StringId ?? string.Empty;
-                if (partyId.Length == 0)
-                {
-                    continue;
-                }
-
-                reportEntries.Add(string.Join(ReportPartSeparator.ToString(),
-                    partyId,
-                    report.SoldiersCount.ToString(CultureInfo.InvariantCulture),
-                    report.PrisonersCount.ToString(CultureInfo.InvariantCulture),
-                    report.LastUpdateTime.ToHours.ToString("R", CultureInfo.InvariantCulture)));
+                string reportString =
+                    report.Party.StringId + ":" +
+                    report.IsArmy.ToString() + ":" +
+                    report.SoldiersCount.ToString() + ":" +
+                    report.PrisonersCount.ToString() + ":" +
+                    report.IsSevereThreat.ToString() + ":" +
+                    report.LastUpdateTime.ToSeconds.ToString(CultureInfo.InvariantCulture) + ":" +
+                    EncodeReportText(report.TextReport);
+                entries.Add(reportString);
             }
-
-            if (reportEntries.Count > 0)
-            {
-                data.Add($"{watchtowerSettlementId}{SettlementSeparator}{string.Join(ReportSeparator.ToString(), reportEntries)}");
-            }
+            string joinedEntries = string.Join("|", entries);
+            data.Add(watchtowerId + "#" + joinedEntries);
         }
-
         return data;
     }
 
     private void LoadSaveData(List<string> saveData)
     {
         _cachedReports.Clear();
-
         foreach (string data in saveData)
         {
             if (string.IsNullOrWhiteSpace(data))
             {
                 continue;
             }
-
-            string[] splitData = data.Split(new[] { SettlementSeparator }, 2, StringSplitOptions.None);
-            if (splitData.Length != 2 || string.IsNullOrWhiteSpace(splitData[0]) || string.IsNullOrWhiteSpace(splitData[1]))
+            string[] splitStage1 = data.Split('#');
+            if (splitStage1.Length != 2)
             {
                 continue;
             }
-
-            Settlement watchtowerSettlement = Settlement.Find(splitData[0]);
-            if (watchtowerSettlement is null || !watchtowerSettlement.TryGetWatchtower(out WatchtowerSettlementComponent? watchtower) || watchtower is null)
+            string
+                watchtowerId = splitStage1[0],
+                joinedReports = splitStage1[1];
+            if (string.IsNullOrWhiteSpace(watchtowerId) || string.IsNullOrWhiteSpace(joinedReports))
             {
                 continue;
             }
-
-            List<WatchtowerReport> reports = new();
-            string[] reportEntries = splitData[1].Split(new[] { ReportSeparator }, StringSplitOptions.RemoveEmptyEntries);
-            foreach (string reportEntry in reportEntries)
+            WatchtowerSettlementComponent watchtower = MBObjectManager.Instance.GetObject<WatchtowerSettlementComponent>(watchtowerId);
+            if (watchtower is null)
             {
-                string[] reportParts = reportEntry.Split(new[] { ReportPartSeparator }, StringSplitOptions.None);
-                if (reportParts.Length != 4 || string.IsNullOrWhiteSpace(reportParts[0]))
+                continue;
+            }
+            string[] splitStage2 = joinedReports.Split('|');
+            List<WatchtowerReport> watchtowerReports = new List<WatchtowerReport>();
+            foreach (string reportLine in splitStage2)
+            {
+                if (string.IsNullOrEmpty(reportLine))
+                {
+                    continue;
+                }
+                string[] splitStage3 = reportLine.Split(':');
+                if (splitStage3.Length != 7)
                 {
                     continue;
                 }
 
-                MobileParty? party = MobileParty.All.FirstOrDefault(p => p.StringId == reportParts[0]);
-                if (party is null
-                    || !int.TryParse(reportParts[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out int savedSoldiersCount)
-                    || !int.TryParse(reportParts[2], NumberStyles.Integer, CultureInfo.InvariantCulture, out int savedPrisonersCount)
-                    || !double.TryParse(reportParts[3], NumberStyles.Float, CultureInfo.InvariantCulture, out double savedLastUpdateHours))
+                MobileParty? party = MobileParty.All.Find(p => p.StringId == splitStage3[0]);
+                if (party is null)
                 {
                     continue;
                 }
-
-                if (reports.Any(r => r.Party == party))
+                if (!bool.TryParse(splitStage3[1], out bool isArmy))
                 {
                     continue;
                 }
-
-                WatchtowerReport report = new WatchtowerReport(party);
-                report.ApplySavedSnapshot(savedSoldiersCount, savedPrisonersCount, CampaignTime.Hours((float)savedLastUpdateHours));
-                reports.Add(report);
+                if (!int.TryParse(splitStage3[2], out int soldiersCount))
+                {
+                    continue;
+                }
+                if (!int.TryParse(splitStage3[3], out int prisonersCount))
+                {
+                    continue;
+                }
+                if (!bool.TryParse(splitStage3[4], out bool isSevereThreat))
+                {
+                    continue;
+                }
+                if (!double.TryParse(splitStage3[5], NumberStyles.Float, CultureInfo.InvariantCulture, out double lastUpdateTimeSeconds))
+                {
+                    continue;
+                }
+                string? textReport = DecodeReportText(splitStage3[6]);
+                CampaignTime lastUpdateTime = CampaignTime.Seconds((long)lastUpdateTimeSeconds);
+                WatchtowerReport watchtowerReport = new WatchtowerReport() { MapFaction = watchtower.MapFaction };
+                watchtowerReport.ApplySavedSnapshot(
+                    party,
+                    isArmy,
+                    soldiersCount,
+                    prisonersCount,
+                    isSevereThreat,
+                    lastUpdateTime,
+                    textReport);
+                if (watchtowerReport.IsValid)
+                {
+                    watchtowerReports.Add(watchtowerReport);
+                }
             }
-
-            if (reports.Count > 0)
-            {
-                _cachedReports[watchtower] = reports;
-            }
-        }
-    }
-
-    private void UpdateAllWatchtowerCaches()
-    {
-        foreach (Settlement settlement in Settlement.All)
-        {
-            if (settlement.TryGetWatchtower(out WatchtowerSettlementComponent? watchtower) && watchtower is not null)
-            {
-                SyncCache(watchtower);
-            }
-        }
-    }
-
-    private void SyncCache(WatchtowerSettlementComponent watchtower)
-    {
-        if (!_cachedReports.TryGetValue(watchtower, out List<WatchtowerReport>? reports))
-        {
-            reports = new List<WatchtowerReport>();
-            _cachedReports[watchtower] = reports;
-        }
-
-        foreach (var report in watchtower.GetCurrentReport())
-        {
-            if (report.IsValid && !reports.Any(wr => wr.Party == report.Party))
-            {
-                reports.Add(report);
-            }
+            _cachedReports.Add(watchtower, watchtowerReports);
         }
     }
 
@@ -201,6 +197,29 @@ internal class WatchtowerManagerCampaignBehavior : CampaignBehaviorBase
             {
                 watchtower.TryAddReport(report);
             }
+        }
+    }
+
+    private static string EncodeReportText(TextObject? textReport)
+    {
+        string text = textReport?.ToString() ?? string.Empty;
+        return Convert.ToBase64String(Encoding.UTF8.GetBytes(text));
+    }
+
+    private static string? DecodeReportText(string encodedText)
+    {
+        if (string.IsNullOrWhiteSpace(encodedText))
+        {
+            return null;
+        }
+
+        try
+        {
+            return Encoding.UTF8.GetString(Convert.FromBase64String(encodedText));
+        }
+        catch (FormatException)
+        {
+            return null;
         }
     }
 }

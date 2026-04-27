@@ -20,7 +20,7 @@ internal static class MapScreenWatchtowerRadiusCirclePatch
     // Change this to any material name you want to test.
     private const string CoverageMaterialName = "white_circle";
     private const uint CoverageTintColor = 0xFF2ECF52;
-    private const float CoverageAlpha = 0.5f;
+    private const float CoverageAlpha = 0.25f;
 
     private static List<GameEntity> _coverageEntities = new List<GameEntity>();
     private static List<Decal> _coverageDecals = new List<Decal>();
@@ -82,6 +82,10 @@ internal static class MapScreenWatchtowerRadiusCirclePatch
             return false;
         }
 
+        ulong mask = material.GetShader().GetMaterialShaderFlagMask("render_on_objects", true);
+        ulong shaderFlags = material.GetShaderFlags();
+        material.SetShaderFlags(shaderFlags & ~mask);
+
         for (int i = 0; i < ringsNumber; i++)
         {
             GameEntity entity = GameEntity.CreateEmpty(scene);
@@ -90,7 +94,7 @@ internal static class MapScreenWatchtowerRadiusCirclePatch
             Decal decal = Decal.CreateDecal();
             decal.SetMaterial(material);
             decal.SetFactor1Linear(CoverageTintColor);
-            decal.SetAlpha(i == 0 ? 0.85f : CoverageAlpha);
+            decal.SetAlpha(i == 0 ? MathF.Min(CoverageAlpha * 2, 1f) : CoverageAlpha);
             scene.AddDecalInstance(decal, "editor_set", deletable: true);
             entity.AddComponent(decal);
             entity.SetVisibilityExcludeParents(visible: false);
